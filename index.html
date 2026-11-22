@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OnwordChat</title>
+  <style>
+    /* 欢迎区、输入框、发送按钮和问题气泡改编自 DeepSeek chat-demo：
+       https://github.com/deepseek-ai/chat-demo/tree/429af5a4558469496b231631e850fbccc0c30c87/src/components
+       session/Welcome.module.css、chatInput/ChatInput.module.css、messages/UserMessage.module.css。
+       上游 MIT 许可全文见本文件末尾。 */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 232px minmax(0, 1fr);
+      color: #222631;
+      background: #fff;
+      font: 16px/1.6 system-ui, "Microsoft YaHei", sans-serif;
+      --blue: #3964fe;
+    }
+    aside {
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 22px 14px;
+      background: #f7f8fb;
+      border-right: 1px solid #ebedf2;
+    }
+    aside button {
+      padding: 9px 12px;
+      border: 0;
+      border-radius: 10px;
+      font: inherit;
+      font-size: 14px;
+      color: inherit;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    #new-chat { background: #e9efff; color: #294fcb; font-weight: 600; }
+    aside h2 { margin: 12px 12px 0; color: #626773; font-size: 13px; }
+    #history { display: flex; flex-direction: column; gap: 3px; overflow: auto; }
+    #history button { flex: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    #history button:hover:enabled { background: #eceff5; }
+    #history button[aria-current="true"] { background: #e4eaf9; color: #284cae; }
+    #storage-notice { margin: 0; }
+    main {
+      width: min(100%, 800px);
+      height: 100dvh;
+      margin: auto;
+      padding: 20px clamp(16px, 4vw, 32px) max(20px, env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    h1 {
+      margin: 0 0 24px;
+      font-size: clamp(24px, 4vw, 32px);
+      line-height: 1.3;
+      font-weight: 600;
+      text-align: center;
+    }
+    h1 span { color: var(--blue); }
+    main.chatting h1 {
+      margin-bottom: 0;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #ebedf2;
+      text-align: left;
+      font-size: 18px;
+    }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 26px 4px 20px;
+      overflow-wrap: anywhere;
+    }
+    .turn + .turn { margin-top: 28px; }
+    .asked {
+      width: fit-content;
+      max-width: calc(100% - 68px);
+      margin: 0 0 24px auto;
+      padding: 10px 16px;
+      border-radius: 22px;
+      line-height: 24px;
+      background: #edf3fe;
+      white-space: pre-wrap;
+    }
+    .answer { margin: 6px 0 0; white-space: pre-wrap; line-height: 1.75; }
+    .status { color: #626773; font-size: 14px; }
+    #chat {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 24px;
+      background: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .02), 0 2px 2px rgba(72, 104, 178, .01),
+                  0 30px 60px rgba(72, 104, 178, .03);
+    }
+    #chat:focus-within { border-color: #849fff; }
+    textarea {
+      width: 100%;
+      padding: 14px 16px 0;
+      border: 0;
+      outline: 0;
+      resize: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      line-height: 24px;
+    }
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 12px 12px 16px;
+      color: #626773;
+      font-size: 12px;
+    }
+    #chat button {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--blue);
+      color: white;
+      font: 24px/1 system-ui, sans-serif;
+      cursor: pointer;
+    }
+    #chat button:hover:enabled { background: #3054d5; }
+    button:disabled { opacity: .4; cursor: default; }
+    @media (pointer: coarse) {
+      .shortcut { visibility: hidden; }
+      #chat button { width: 44px; height: 44px; }
+    }
+    @media (max-width: 640px) {
+      body { height: 100dvh; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+      aside { height: auto; padding: 8px 12px; flex-direction: row; align-items: center; gap: 8px; border: 0; border-bottom: 1px solid #ebedf2; }
+      aside h2 { display: none; }
+      #new-chat { flex: none; }
+      #history { flex-direction: row; }
+      #history button { max-width: 12em; }
+      main { height: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <aside aria-label="会话导航">
+    <button id="new-chat" type="button">＋ 新对话</button>
+    <h2>历史对话</h2>
+    <nav id="history" aria-label="历史对话"></nav>
+  </aside>
+  <main>
+    <h1><span>OnwordChat</span></h1>
+    <section id="messages" aria-label="聊天记录" hidden></section>
+    <template id="turn-template">
+      <div class="turn">
+        <p class="asked" aria-label="你的问题"></p>
+        <strong>OnwordChat</strong>
+        <p class="answer"></p>
+        <div class="status" role="status"></div>
+      </div>
+    </template>
+    <form id="chat">
+      <textarea id="question" rows="2" aria-label="问题" placeholder="输入你的问题……" required></textarea>
+      <div class="actions">
+        <span class="shortcut">Enter 发送 · Shift + Enter 换行</span>
+        <button type="submit" aria-label="发送问题" title="发送问题" disabled>↑</button>
+      </div>
+    </form>
+    <p id="storage-notice" class="status" role="status"></p>
+  </main>
+  <script>
+    const form = document.querySelector("#chat");
+    const input = document.querySelector("#question");
+    const button = form.querySelector("button");
+    const messages = document.querySelector("#messages");
+    const turnTemplate = document.querySelector("#turn-template");
+    const newChat = document.querySelector("#new-chat");
+    const historyList = document.querySelector("#history");
+    const storageNotice = document.querySelector("#storage-notice");
+    const selectedKey = "fastgpt.selectedChat";
+    let chats = [];
+    let currentId = "";
+
+    async function readHistory(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("读取历史记录失败");
+      return response.json();
+    }
+
+    // 会话和消息由后端保存。浏览器只记住上次打开的会话 ID。
+    function rememberSelection() {
+      try {
+        localStorage.setItem(selectedKey, currentId);
+      } catch {
+        storageNotice.textContent = "浏览器无法记住当前会话，刷新后请从历史列表打开。";
+      }
+    }
+
+    function renderHistory() {
+      historyList.replaceChildren();
+      newChat.disabled = input.readOnly;
+      for (const chat of chats) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.textContent = chat.title;
+        item.setAttribute("aria-current", String(chat.id === currentId));
+        item.disabled = input.readOnly;
+        item.onclick = () => selectChat(chat.id);
+        historyList.append(item);
+      }
+    }
+
+    function interruptedText(answer) {
+      return answer ? "回答中断，可以重新发送。" : "未取得完整回答，可以重新发送。";
+    }
+
+    function appendTurn(question) {
+      const row = turnTemplate.content.firstElementChild.cloneNode(true);
+      row.querySelector(".asked").textContent = question;
+      messages.append(row);
+      return row;
+    }
+
+    function showMessages(history) {
+      messages.replaceChildren();
+      messages.hidden = !currentId;
+      document.querySelector("main").classList.toggle("chatting", Boolean(currentId));
+      let row = null;
+      for (const message of history) {
+        if (message.role === "user") {
+          row = appendTurn(message.content);
+          row.querySelector(".status").textContent = "尚无已保存的回答。";
+        } else if (message.role === "assistant") {
+          if (!row) {
+            row = appendTurn("");
+            row.querySelector(".asked").hidden = true;
+          }
+          row.querySelector(".answer").textContent = message.content;
+          row.querySelector(".status").textContent = "";
+          row = null;
+        }
+      }
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setBusy(busy) {
+      input.readOnly = busy;
+      renderHistory();
+      updateButton();
+    }
+
+    async function selectChat(id) {
+      setBusy(true);
+      storageNotice.textContent = id ? "正在读取对话……" : "";
+      try {
+        let history = [];
+        if (id) history = await readHistory("/api/conversations/" + encodeURIComponent(id) + "/messages");
+        currentId = id;
+        input.value = "";
+        showMessages(history);
+        storageNotice.textContent = "";
+        rememberSelection();
+      } catch {
+        storageNotice.textContent = "对话读取失败，请再点一次历史标题。";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function loadHistory() {
+      setBusy(true);
+      try {
+        chats = await readHistory("/api/conversations");
+        let selectedId;
+        try {
+          selectedId = localStorage.getItem(selectedKey);
+        } catch {
+          storageNotice.textContent = "请从历史列表选择会话。";
+        }
+        if (chats.some(chat => chat.id === selectedId)) await selectChat(selectedId);
+      } catch {
+        storageNotice.textContent = "历史记录加载失败，请刷新重试。";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    newChat.onclick = async () => {
+      await selectChat("");
+      input.focus();
+    };
+    loadHistory();
+
+    function updateButton() {
+      button.disabled = input.readOnly || !input.value.trim();
+    }
+    input.addEventListener("input", updateButton);
+    input.addEventListener("keydown", (event) => {
+      // 中文输入法确认候选字时也会按 Enter。
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault();
+        if (!event.repeat) form.requestSubmit();
+      }
+    });
+
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const question = input.value.trim();
+      if (!question || input.readOnly) return;
+
+      setBusy(true);
+      input.value = "";
+      const newConversation = !currentId || !chats.some(chat => chat.id === currentId);
+      if (!currentId) {
+        currentId = crypto.randomUUID();
+        rememberSelection();
+      }
+      document.querySelector("main").classList.add("chatting");
+      messages.hidden = false;
+      const row = appendTurn(question);
+      const answer = row.querySelector(".answer");
+      const status = row.querySelector(".status");
+      status.textContent = "正在回答……";
+      messages.scrollTop = messages.scrollHeight;
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, chatId: currentId })
+        });
+        if (!response.ok) throw new Error("请求失败");
+        if (response.headers.get("Content-Type")?.split(";")[0].trim() === "application/json") {
+          const data = await response.json();
+          if (typeof data.answer === "string") {
+            answer.textContent = data.answer;
+          }
+        } else {
+          // 后端已解析 FastGPT 的 SSE，这里只需解码 UTF-8 并追加纯文本。
+          const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
+              status.textContent = "";
+              answer.append(value);
+              if (nearBottom) messages.scrollTop = messages.scrollHeight;
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        }
+        if (!answer.textContent) throw new Error("回答为空");
+        status.textContent = "";
+      } catch {
+        status.textContent = interruptedText(answer.textContent);
+        input.value = question;
+      } finally {
+        // 后端收到首个问题就会建会话，即使回答中断，也重新读取真实列表。
+        if (newConversation) {
+          try {
+            chats = await readHistory("/api/conversations");
+          } catch {
+            storageNotice.textContent = "历史列表更新失败，请刷新重试。";
+          }
+        }
+        setBusy(false);
+      }
+    };
+  </script>
+  <!-- License for the adapted DeepSeek styles
+  MIT License
+
+  Copyright (c) 2026 DeepSeek
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+  -->
+</body>
+</html>
