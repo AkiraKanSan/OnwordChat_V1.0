@@ -34,11 +34,11 @@ def get_conversations():
 def get_messages(chat_id: str):
     return list_messages(chat_id)
 
-
+# 对话接口
 @app.post("/api/chat")
 def chat(body: ChatRequest):
-
-    if body.chatId is not None:
+    # 加入上下文
+    if body.chatId is not None:             
         historys=list_messages(body.chatId)
     else: historys=[]
 

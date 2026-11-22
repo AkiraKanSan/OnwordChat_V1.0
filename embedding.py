@@ -14,12 +14,12 @@ def embed(text: str) -> list[float]:
     response = httpx.post(
         f"{base_url}/embeddings",
         headers={"Authorization": f"Bearer {api_key}"},
-        json={"model":model,"input":text},       # ① 写请求体
+        json={"model":model,"input":text},       #  写请求体
         timeout=30,
     )
     response.raise_for_status()
-    data = response.json()          # ② 读取响应里的 JSON
-    return data["data"][0]["embedding"]          # ③ 取出第一条结果的向量
+    data = response.json()          #  读取响应里的 JSON
+    return data["data"][0]["embedding"]          #  取出第一条结果的向量
 
 
 if __name__ == "__main__":
