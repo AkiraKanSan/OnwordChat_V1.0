@@ -1,6 +1,7 @@
 import os
 
 import httpx
+from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
 from search import search
@@ -29,7 +30,18 @@ system_content="""你是明川市图书馆的读者服务助手。请根据本�
 
 # 向大模型提问提问
 def ask(question: str,history=None) -> str:
-    rows = search(question)                     #向量库查询
+    # langchain 创建 model
+    model = ChatOpenAI(
+        model = os.getenv("CHAT_MODEL"),
+        base_url = os.getenv("CHAT_BASE_URL"),
+        api_key = os.getenv("CHAT_API_KEY"),
+        timeout = 30,
+
+    )
+    # 根据聊天记录补全检索问题
+    query = build_search_query(question, history, model)
+    rows = search(query)            #向量库查询    
+    print("检索问题：", query)             
     context = "\n\n".join(
         f"资料 {i}\n问：{stored_question}\n答：{answer}"
         for i, (stored_question, answer, distance) in enumerate(rows, start=1)
@@ -43,18 +55,26 @@ def ask(question: str,history=None) -> str:
         messages.append(message)
     messages.append({"role": "user", "content": f"[用户问题]:{question}\n"f"[参考资料]:{context}"})
 
-    response = httpx.post(
-        os.environ["CHAT_BASE_URL"].rstrip("/") + "/chat/completions",
-        headers={"Authorization": f"Bearer {os.environ['CHAT_API_KEY']}"},
-        json={
-            "model": os.environ["CHAT_MODEL"],
-            "messages": messages
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
+
+    # 发送消息
+    reply = model.invoke(messages)
+
+    # 返回文本
+    return reply.content
+
+def build_search_query(question, history, model):
+    # 首轮没有聊天记录，直接用原问题检索
+    if not history:
+        return question
+
+    # 取最近四条聊天记录，最后放上读者这次的原话
+    messages = [{"role": "system", "content": "根据对话，把读者最后一句话补成一个可以单独检索的问题。保留原意，只输出问题。"}]
+    messages.extend(history[-4:])
+    messages.append({"role":"user","content": question})
+
+    # 让模型补全检索问题，返回改写后的文本
+    reply = model.invoke(messages)
+    return reply.content
 
 
 if __name__ == "__main__":

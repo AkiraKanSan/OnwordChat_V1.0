@@ -6,6 +6,8 @@ from chat import ask
 from pathlib import Path
 from fastapi.responses import FileResponse
 
+from search import search
+
 
 from history import save_turn , list_conversations ,list_messages
 
@@ -46,3 +48,20 @@ def chat(body: ChatRequest):
 
     return {"answer": answer}  # 把回答放进返回给调用方的 JSON
 
+# 下面是调试用的，查询知识库检索的内容，返回question, answer, distance
+class SearchRequest(BaseModel):
+    question : str
+    
+@app.post("/api/search")
+def search_knowledge(body:SearchRequest):
+    rows = search(body.question)    # 从知识库检索到内容，会输出三条
+    results =[]
+    for row in rows:
+        results.append({
+            "question" : row[0],
+            "answer" : row[1],
+            "distance" : row[2],
+
+        })
+
+    return results                  # 整理数据返回

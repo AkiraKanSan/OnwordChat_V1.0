@@ -1,10 +1,10 @@
 # OnwordChat
 
-一个基于 PostgreSQL + pgvector 的 RAG 问答项目：文档切分、向量化后写入 pgvector 向量库，用户提问时做相似度检索并交由大模型生成回答；聊天记录同步到 PostgreSQL 数据库。
+这是一个用 FastAPI、LangChain 和 PostgreSQL + pgvector 实现的图书馆 FAQ 问答服务。
 
-目前上下文只有五条，且不会根据上下文在向量库检索。嵌入模型用的硅基流动的bge-m3。
+目前上下文只有四条，利用langchain的接口加入了上下文在向量库检索。嵌入模型用的硅基流动的bge-m3。
 
-知识库写入在ingest.py，只做了通过文件夹内的knowledge.json录入向量库。
+知识库写入在ingest.py，暂时只做了通过文件夹内的knowledge.json录入向量库。
 
 ## 本地运行
 
@@ -27,3 +27,5 @@ Copy-Item .env.example .env
 打开[聊天首页](http://127.0.0.1:8000/)或[接口文档](http://127.0.0.1:8000/docs)。
 
 
+新增了一个POST /api/search ，可以单独查看检索到的问题、答案和distance。
+空白问题也会被检索，但是空白输入被前端拦截了，不做处理了。
