@@ -3,6 +3,8 @@ import os
 import httpx
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from search import search
 
@@ -51,7 +53,7 @@ def ask(question: str,history=None) -> str:
     messages=[
                 {"role": "system", "content": system_content}
             ]
-    for message in history[-4:]:
+    for message in history:
         messages.append(message)
     messages.append({"role": "user", "content": f"[用户问题]:{question}\n"f"[参考资料]:{context}"})
 
@@ -62,20 +64,25 @@ def ask(question: str,history=None) -> str:
     # 返回文本
     return reply.content
 
+# 根据历史消息，通过大模型输出要检索的问题
 def build_search_query(question, history, model):
     # 首轮没有聊天记录，直接用原问题检索
     if not history:
         return question
 
-    # 取最近四条聊天记录，最后放上读者这次的原话
-    messages = [{"role": "system", "content": "根据对话，把读者最后一句话补成一个可以单独检索的问题。保留原意，只输出问题。"}]
-    messages.extend(history[-4:])
-    messages.append({"role":"user","content": question})
+    # 取最近五条聊天记录，最后放上读者这次的原话
+    prompt = ChatPromptTemplate.from_messages([
+    ("system", "根据对话，把读者最后一句话补成一个可以单独检索的问题。保留原意，只输出问题。"),                  #  固定的系统提示词
+    MessagesPlaceholder("history"),        # 历史消息插槽
+    ("human", "{question}"),               # 本次问题占位符
+])
+    # 流程
+    chain = prompt | model | StrOutputParser()
+
 
     # 让模型补全检索问题，返回改写后的文本
-    reply = model.invoke(messages)
-    return reply.content
-
+    reply = chain.invoke({"history":history,"question":question})
+    return reply
 
 if __name__ == "__main__":
     print(ask(input("你的问题：")))

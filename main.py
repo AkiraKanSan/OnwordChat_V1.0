@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from search import search
 
 
-from history import save_turn , list_conversations ,list_messages
+from history import save_turn , list_conversations ,list_messages ,list_recent_messages
 
 app = FastAPI()
 
@@ -39,7 +39,7 @@ def get_messages(chat_id: str):
 def chat(body: ChatRequest):
     # 加入上下文
     if body.chatId is not None:             
-        historys=list_messages(body.chatId)
+        historys=list_recent_messages(body.chatId)
     else: historys=[]
 
     answer = ask(body.question,historys)       # 从请求体里取出问题和历史记录向大模型提问

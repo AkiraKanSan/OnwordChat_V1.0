@@ -2,7 +2,7 @@
 
 这是一个用 FastAPI、LangChain 和 PostgreSQL + pgvector 实现的图书馆 FAQ 问答服务。
 
-目前上下文只有四条，利用langchain的接口加入了上下文在向量库检索。嵌入模型用的硅基流动的bge-m3。
+目前上下文只有五条，利用langchain的接口加入了上下文在向量库检索。嵌入模型用的硅基流动的bge-m3。
 
 知识库写入在ingest.py，暂时只做了通过文件夹内的knowledge.json录入向量库。
 
