@@ -67,14 +67,3 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         else :
             print ("已存在",question)
 
-
-'''
-        row = conn.execute(
-            """
-            INSERT INTO knowledge (question, answer, embedding)
-            VALUES (%s, %s, %s::vector)
-            RETURNING id, question, vector_dims(embedding)
-            """,
-            (question, answer, vector),  #把向量列表转换成文本
-        ).fetchone()
-        print(row)'''

@@ -19,11 +19,11 @@ def save_turn(chat_id: str, question: str, answer: str) -> None:
             (chat_id, question[:16]),
 )
 
-        # 创建 messages 表。
+        # 插入问答。
         insert_message = "INSERT INTO messages (conversation_id, role, content) VALUES (%s, %s, %s)"
         conn.execute(insert_message, (chat_id, "user", question))       # 写入提问
         conn.execute(insert_message, (chat_id, "assistant", answer))    # 写入回答
-    pass
+
 
 
 # 查询问答接口，只返回chat_id , title
@@ -67,7 +67,7 @@ def list_recent_messages(chat_id):
                 SELECT  id, role, content FROM messages
                 WHERE conversation_id = %s
                 ORDER BY id DESC
-                LIMIT 5 )t
+                LIMIT 10 )t
             ORDER BY id ASC;
             """,(chat_id,)).fetchall()
     
