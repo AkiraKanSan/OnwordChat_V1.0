@@ -29,18 +29,35 @@ system_content="""你是明川市图书馆的读者服务助手。请根据本�
 
 【表达方式】
 通常用一到两句话作答。读者问“几天”就先说天数，问“怎么办”就先说办理步骤。无需复述标准问题、罗列无关规定或解释检索过程。不要声称已查询读者账户、完成预约或办理其他业务。"""
+# langchain 创建 model
+model = ChatOpenAI(
+    model = os.getenv("CHAT_MODEL"),
+    base_url = os.getenv("CHAT_BASE_URL"),
+    api_key = os.getenv("CHAT_API_KEY"),
+    timeout = 30,
 
-# 向大模型提问提问
+)
+# 这是问答流程
+answer_prompt = ChatPromptTemplate.from_messages([
+("system", system_content),                  #  固定的系统提示词
+MessagesPlaceholder("history"),        # 历史消息插槽
+("human", "问题：{question}\n参考资料:{context}"),             
+])
+# 问答流程
+answer_chain = answer_prompt | model | StrOutputParser()
+
+
+
+# 取最近五条聊天记录，最后放上读者这次的原话
+prompt = ChatPromptTemplate.from_messages([
+("system", "根据对话，把读者最后一句话补成一个可以单独检索的问题。保留原意，只输出问题。"),                  #  固定的系统提示词
+MessagesPlaceholder("history"),        # 历史消息插槽
+("human", "{question}"),               # 本次问题占位符
+])    
+# 这是生成检索向量库的内容的流程
+chain = prompt | model | StrOutputParser()
+
 def ask(question: str,history=None) -> str:
-    # langchain 创建 model
-    model = ChatOpenAI(
-        model = os.getenv("CHAT_MODEL"),
-        base_url = os.getenv("CHAT_BASE_URL"),
-        api_key = os.getenv("CHAT_API_KEY"),
-        timeout = 30,
-
-    )
-    # 根据聊天记录补全检索问题
     query = build_search_query(question, history, model)
     rows = search(query)            #向量库查询    
     print("检索问题：", query)             
@@ -48,37 +65,17 @@ def ask(question: str,history=None) -> str:
         f"资料 {i}\n问：{stored_question}\n答：{answer}"
         for i, (stored_question, answer, distance) in enumerate(rows, start=1)
     )
-    if history is None:
-        history=[]
-    messages=[
-                {"role": "system", "content": system_content}
-            ]
-    for message in history:
-        messages.append(message)
-    messages.append({"role": "user", "content": f"[用户问题]:{question}\n"f"[参考资料]:{context}"})
 
+    # 根据检索到的 FAQ 回答问题
+    reply = answer_chain.invoke({"history":history or [],"question":question,"context":context})
+    return reply
 
-    # 发送消息
-    reply = model.invoke(messages)
-
-    # 返回文本
-    return reply.content
 
 # 根据历史消息，通过大模型输出要检索的问题
 def build_search_query(question, history, model):
     # 首轮没有聊天记录，直接用原问题检索
     if not history:
         return question
-
-    # 取最近五条聊天记录，最后放上读者这次的原话
-    prompt = ChatPromptTemplate.from_messages([
-    ("system", "根据对话，把读者最后一句话补成一个可以单独检索的问题。保留原意，只输出问题。"),                  #  固定的系统提示词
-    MessagesPlaceholder("history"),        # 历史消息插槽
-    ("human", "{question}"),               # 本次问题占位符
-])
-    # 流程
-    chain = prompt | model | StrOutputParser()
-
 
     # 让模型补全检索问题，返回改写后的文本
     reply = chain.invoke({"history":history,"question":question})
