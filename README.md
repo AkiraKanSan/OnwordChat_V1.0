@@ -6,6 +6,8 @@
 
 知识库写入在ingest.py，暂时只做了通过文件夹内的knowledge.json录入向量库。
 
+增加了账户登陆功能，用来隔离聊天记录
+
 ## 本地运行
 
 下面的命令适用于 Windows PowerShell。开发环境使用 Python 3.12。先准备一个已启用 pgvector 的 PostgreSQL 数据库，并让应用账号拥有建表和读写权限。
