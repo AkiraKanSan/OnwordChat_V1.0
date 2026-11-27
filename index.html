@@ -10,6 +10,7 @@
        session/Welcome.module.css、chatInput/ChatInput.module.css、messages/UserMessage.module.css。
        上游 MIT 许可全文见本文件末尾。 */
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       display: grid;
@@ -46,6 +47,22 @@
     #history button:hover:enabled { background: #eceff5; }
     #history button[aria-current="true"] { background: #e4eaf9; color: #284cae; }
     #storage-notice { margin: 0; }
+    #logout { margin-top: auto; color: #525968; white-space: nowrap; }
+    #auth {
+      grid-column: 1 / -1; grid-row: 1 / -1; align-self: center;
+      width: min(340px, calc(100% - 40px)); margin: auto;
+    }
+    body:has(#auth:not([hidden])) { min-height: 100dvh; background: #f7f8fb; }
+    #auth h1 { text-align: left; }
+    #auth label { display: block; margin-top: 14px; font-size: 14px; }
+    #auth input {
+      display: block; width: 100%; margin-top: 4px; padding: 10px 12px;
+      border: 1px solid #c9ced9; border-radius: 10px; font: inherit;
+    }
+    #auth button { padding: 10px 16px; border: 0; border-radius: 10px; font: inherit; cursor: pointer; }
+    #auth-submit { background: var(--blue); color: white; }
+    #auth-switch { background: transparent; color: #294fcb; }
+    #auth .auth-actions { display: flex; gap: 8px; margin-top: 20px; }
     main {
       width: min(100%, 800px);
       height: 100dvh;
@@ -144,17 +161,29 @@
       #new-chat { flex: none; }
       #history { flex-direction: row; }
       #history button { max-width: 12em; }
+      #logout { margin: 0 0 0 auto; }
       main { height: 100%; }
     }
   </style>
 </head>
 <body>
-  <aside aria-label="会话导航">
+  <form id="auth" hidden>
+    <h1><span>OnwordChat</span></h1>
+    <label>用户名<input name="username" autocomplete="username" maxlength="50" required></label>
+    <label>密码<input name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+    <div class="auth-actions">
+      <button id="auth-submit" type="submit">登录</button>
+      <button id="auth-switch" type="button">注册新账号</button>
+    </div>
+    <p class="status" id="auth-status" role="status"></p>
+  </form>
+  <aside aria-label="会话导航" hidden>
     <button id="new-chat" type="button">＋ 新对话</button>
     <h2>历史对话</h2>
     <nav id="history" aria-label="历史对话"></nav>
+    <button id="logout" type="button">退出登录</button>
   </aside>
-  <main>
+  <main hidden>
     <h1><span>OnwordChat</span></h1>
     <section id="messages" aria-label="聊天记录" hidden></section>
     <template id="turn-template">
@@ -183,12 +212,93 @@
     const newChat = document.querySelector("#new-chat");
     const historyList = document.querySelector("#history");
     const storageNotice = document.querySelector("#storage-notice");
-    const selectedKey = "fastgpt.selectedChat";
+    const auth = document.querySelector("#auth");
+    const authStatus = document.querySelector("#auth-status");
+    const authSubmit = document.querySelector("#auth-submit");
+    const authSwitch = document.querySelector("#auth-switch");
+    const logout = document.querySelector("#logout");
+    let registering = false;
+    let selectedKey;
     let chats = [];
     let currentId = "";
 
+    // 同一站点的标签页共用登录 Cookie。登录或退出时，通知其他标签页重新确认账号。
+    const accountChanges = window.BroadcastChannel ? new BroadcastChannel("onwordchat-account") : null;
+    if (accountChanges) accountChanges.onmessage = () => location.reload();
+    window.addEventListener("pageshow", event => {
+      // 浏览器后退时可能恢复整页快照，重新加载以免显示上一个账号的聊天。
+      if (event.persisted) location.reload();
+    });
+
+    function refreshAccount() {
+      accountChanges?.postMessage("changed");
+      location.reload();
+    }
+
+    function setRegistering(value) {
+      registering = value;
+      authSubmit.textContent = value ? "注册" : "登录";
+      authSwitch.textContent = value ? "返回登录" : "注册新账号";
+      auth.elements.password.autocomplete = value ? "new-password" : "current-password";
+      authStatus.textContent = value ? "请设置 8 至 128 位密码。" : "";
+    }
+
+    authSwitch.onclick = () => setRegistering(!registering);
+    auth.onsubmit = async event => {
+      event.preventDefault();
+      if (authSubmit.disabled) return;
+      authSubmit.disabled = authSwitch.disabled = true;
+      authStatus.textContent = "";
+      try {
+        const response = await fetch(registering ? "/api/auth/register" : "/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: auth.elements.username.value.trim(), password: auth.elements.password.value })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          authStatus.textContent = typeof error.detail === "string" ? error.detail : "提交失败，请检查输入后重试。";
+          return;
+        }
+        if (registering) {
+          // 注册接口只创建账号，用户还要登录一次才能拿到会话 Cookie。
+          setRegistering(false);
+          authStatus.textContent = "注册成功，请点击登录。";
+        } else {
+          auth.reset();
+          refreshAccount();
+        }
+      } catch {
+        authStatus.textContent = "连接失败，请稍后重试。";
+      } finally {
+        authSubmit.disabled = authSwitch.disabled = false;
+      }
+    };
+
+    logout.onclick = async () => {
+      setBusy(true);
+      try {
+        const response = await fetch("/api/auth/logout", { method: "POST" });
+        if (!response.ok) throw new Error();
+        refreshAccount();
+      } catch {
+        storageNotice.textContent = "退出失败，请重试。";
+        setBusy(false);
+      }
+    };
+
+    async function chatRequest(url, options) {
+      const response = await fetch(url, { cache: "no-store", ...options });
+      if (response.status === 401) {
+        // 登录过期后重新走页面初始化流程，回到登录表单。
+        location.reload();
+        throw new Error("请重新登录");
+      }
+      return response;
+    }
+
     async function readHistory(url) {
-      const response = await fetch(url);
+      const response = await chatRequest(url);
       if (!response.ok) throw new Error("读取历史记录失败");
       return response.json();
     }
@@ -216,10 +326,6 @@
       }
     }
 
-    function interruptedText(answer) {
-      return answer ? "回答中断，可以重新发送。" : "未取得完整回答，可以重新发送。";
-    }
-
     function appendTurn(question) {
       const row = turnTemplate.content.firstElementChild.cloneNode(true);
       row.querySelector(".asked").textContent = question;
@@ -232,6 +338,7 @@
       messages.hidden = !currentId;
       document.querySelector("main").classList.toggle("chatting", Boolean(currentId));
       let row = null;
+      // 后端按时间顺序返回消息；遇到提问就新建一轮，再把回答填到这一轮。
       for (const message of history) {
         if (message.role === "user") {
           row = appendTurn(message.content);
@@ -251,6 +358,7 @@
 
     function setBusy(busy) {
       input.readOnly = busy;
+      logout.disabled = busy;
       renderHistory();
       updateButton();
     }
@@ -283,6 +391,7 @@
         } catch {
           storageNotice.textContent = "请从历史列表选择会话。";
         }
+        // 上次打开的会话可能已被删除，只恢复当前列表里仍存在的会话。
         if (chats.some(chat => chat.id === selectedId)) await selectChat(selectedId);
       } catch {
         storageNotice.textContent = "历史记录加载失败，请刷新重试。";
@@ -295,7 +404,27 @@
       await selectChat("");
       input.focus();
     };
-    loadHistory();
+    // 打开页面时先向后端确认当前用户，登录成功后再加载这个账号的历史。
+    async function start() {
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        if (response.status === 401) {
+          auth.hidden = false;
+          return;
+        }
+        if (!response.ok) throw new Error();
+        const user = await response.json();
+        // 用用户 ID 区分本地存储的键，同一浏览器里的账号可以各自记住上次的会话。
+        selectedKey = "onwordchat.selectedChat." + user.id;
+        document.querySelector("aside").hidden = false;
+        document.querySelector("main").hidden = false;
+        await loadHistory();
+      } catch {
+        auth.hidden = false;
+        authStatus.textContent = "无法读取登录状态，请刷新重试。";
+      }
+    }
+    start();
 
     function updateButton() {
       button.disabled = input.readOnly || !input.value.trim();
@@ -315,12 +444,9 @@
       if (!question || input.readOnly) return;
 
       setBusy(true);
+      storageNotice.textContent = "";
       input.value = "";
       const newConversation = !currentId || !chats.some(chat => chat.id === currentId);
-      if (!currentId) {
-        currentId = crypto.randomUUID();
-        rememberSelection();
-      }
       document.querySelector("main").classList.add("chatting");
       messages.hidden = false;
       const row = appendTurn(question);
@@ -330,40 +456,40 @@
       messages.scrollTop = messages.scrollHeight;
 
       try {
-        const response = await fetch("/api/chat", {
+        // 首问传 null，由后端创建会话；追问带回上次响应的 chatId，接着这段历史回答。
+        const response = await chatRequest("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, chatId: currentId })
+          body: JSON.stringify({ question, chatId: currentId || null })
         });
-        if (!response.ok) throw new Error("请求失败");
-        if (response.headers.get("Content-Type")?.split(";")[0].trim() === "application/json") {
-          const data = await response.json();
-          if (typeof data.answer === "string") {
-            answer.textContent = data.answer;
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          const detail = typeof error?.detail === "string" ? error.detail : "请稍后重试。";
+          if (response.status === 404 && detail === "会话不存在" && currentId) {
+            // 清掉失效的会话 ID，保留原问题，下一次发送会创建新会话。
+            chats = chats.filter(chat => chat.id !== currentId);
+            currentId = "";
+            rememberSelection();
+            showMessages([]);
+            input.value = question;
+            storageNotice.textContent = "原会话已不可用，已切换到新对话。点击发送可重新提问。";
+            return;
           }
-        } else {
-          // 后端已解析 FastGPT 的 SSE，这里只需解码 UTF-8 并追加纯文本。
-          const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-          try {
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
-              status.textContent = "";
-              answer.append(value);
-              if (nearBottom) messages.scrollTop = messages.scrollHeight;
-            }
-          } finally {
-            reader.releaseLock();
-          }
+          throw new Error(`发送失败（HTTP ${response.status}）：${detail}`);
         }
-        if (!answer.textContent) throw new Error("回答为空");
+        const data = await response.json().catch(() => null);
+        if (!data?.chatId || typeof data.answer !== "string" || !data.answer.trim()) {
+          throw new Error("服务返回的回答或会话 ID 不完整，请检查 /api/chat 的响应。");
+        }
+        currentId = data.chatId;
+        rememberSelection();
+        answer.textContent = data.answer;
         status.textContent = "";
-      } catch {
-        status.textContent = interruptedText(answer.textContent);
+      } catch (error) {
+        status.textContent = error instanceof TypeError ? "无法连接聊天服务，请检查连接后重试。" : error.message;
         input.value = question;
       } finally {
-        // 后端收到首个问题就会建会话，即使回答中断，也重新读取真实列表。
+        // 首问结束后，从后端刷新会话标题。
         if (newConversation) {
           try {
             chats = await readHistory("/api/conversations");

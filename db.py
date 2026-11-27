@@ -8,7 +8,7 @@ load_dotenv()
 with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
     row = conn.execute("SELECT current_database() , current_user").fetchone()       #连接数据库输出第一行
     print(row)
-
+    # 知识库
     conn.execute("""
     CREATE TABLE IF NOT EXISTS knowledge (
         id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -17,7 +17,7 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         embedding vector(1024) NOT NULL
     )
 """)
-
+    # id和标题库
     conn.execute("""
     CREATE TABLE IF NOT EXISTS conversations (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -27,6 +27,7 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
 
     """
     )
+    # 内容库
     conn.execute("""
     CREATE TABLE IF NOT EXISTS messages (
         id bigserial PRIMARY KEY,
@@ -38,7 +39,20 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
 
     """
     )
-    #print(conn.execute("SELECT to_regclass('public.knowledge')").fetchone())
+
+    # 再建一个user_id
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+    id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    username text NOT NULL UNIQUE,
+    password_hash text NOT NULL
+    );
+
+    ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS user_id integer REFERENCES users(id);  
+        """
+    )
+
     print(conn.execute("""
     SELECT to_regclass('public.conversations'), to_regclass('public.messages')
 """).fetchone())
